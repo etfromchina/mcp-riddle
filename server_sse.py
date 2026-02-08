@@ -240,6 +240,9 @@ riddles_data = load_riddles()
 # ============ 7. Starlette 路由 ============
 async def sse_endpoint(request):
     """SSE 端点 - GET 建连, POST 兼容消息调用"""
+    if request.method == "OPTIONS":
+        return JSONResponse({"ok": True}, status_code=200)
+
     if request.method == "POST":
         return await messages_endpoint(request)
 
@@ -250,6 +253,12 @@ async def sse_endpoint(request):
     session_id = session_manager.create_session(queue)
     
     async def event_generator():
+        host = request.headers.get("host", "")
+        endpoint_url = f"{request.url.scheme}://{host}/messages?session_id={session_id}" if host else f"/messages?session_id={session_id}"
+
+        # MCP SSE compatibility: many clients expect the endpoint event first.
+        yield {"event": "endpoint", "data": endpoint_url}
+
         # 发送 session ID
         yield {"event": "message", "data": json.dumps({"type": "session", "sessionId": session_id})}
         
@@ -303,6 +312,9 @@ def _extract_session_id(request, message: Dict) -> Optional[str]:
 async def messages_endpoint(request):
     """处理 POST 消息 - 支持 SSE session"""
     try:
+        if request.method == "OPTIONS":
+            return JSONResponse({"ok": True}, status_code=200)
+
         body = await request.body()
         message = json.loads(body.decode())
         logger.info(f"收到消息: {message}")
@@ -333,10 +345,10 @@ async def health_check(request):
 
 
 starlette_app = Starlette(routes=[
-    Route("/sse", sse_endpoint, methods=["GET", "POST"]),
-    Route("/mcp", sse_endpoint, methods=["GET", "POST"]),
-    Route("/sse/messages", messages_endpoint, methods=["POST"]),
-    Route("/messages", messages_endpoint, methods=["POST"]),
+    Route("/sse", sse_endpoint, methods=["GET", "POST", "OPTIONS"]),
+    Route("/mcp", sse_endpoint, methods=["GET", "POST", "OPTIONS"]),
+    Route("/sse/messages", messages_endpoint, methods=["POST", "OPTIONS"]),
+    Route("/messages", messages_endpoint, methods=["POST", "OPTIONS"]),
     Route("/health", health_check),
 ])
 
