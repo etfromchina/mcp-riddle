@@ -8,6 +8,7 @@ import json
 import logging
 import random
 import uuid
+from threading import Lock
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from asyncio import Queue
@@ -71,6 +72,8 @@ class SessionManager:
 
 
 session_manager = SessionManager()
+sequential_cursors: Dict[str, int] = {}
+sequential_lock = Lock()
 
 
 # ============ 3. 工具定义 ============
@@ -126,8 +129,17 @@ def handle_get_riddle(args: Dict, riddles: List[Dict]) -> str:
     
     if not filtered:
         return "❌ 谜语库为空"
-    
-    selected = random.choice(filtered)
+
+    if mode == "sequential":
+        # Keep a stable cursor per list scope so sequential calls return deterministic order.
+        scope_key = f"category:{category}" if category else "__all__"
+        with sequential_lock:
+            current = sequential_cursors.get(scope_key, 0)
+            selected = filtered[current % len(filtered)]
+            sequential_cursors[scope_key] = current + 1
+    else:
+        selected = random.choice(filtered)
+
     result = json.dumps(selected, ensure_ascii=False, indent=2)
     return f"✅ 获取谜语成功：\n{result}"
 

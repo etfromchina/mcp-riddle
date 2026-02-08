@@ -46,7 +46,7 @@ docker logs -f mcp-riddle-server
 
 ```bash
 # 健康检查
-curl http://localhost:8000/health
+curl http://localhost:48080/health
 
 # 预期返回：
 # {"status":"healthy","riddles_count":12,"server":"mcp-riddle-game"}
