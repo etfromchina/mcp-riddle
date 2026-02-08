@@ -15,7 +15,7 @@ from asyncio import Queue
 
 from starlette.applications import Starlette
 from starlette.routing import Route
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -239,7 +239,10 @@ riddles_data = load_riddles()
 
 # ============ 7. Starlette 路由 ============
 async def sse_endpoint(request):
-    """SSE 端点 - 建立连接并发送消息"""
+    """SSE 端点 - GET 建连, POST 兼容消息调用"""
+    if request.method == "POST":
+        return await messages_endpoint(request)
+
     from asyncio import Queue
     from sse_starlette.sse import EventSourceResponse
     
@@ -264,6 +267,39 @@ async def sse_endpoint(request):
     return EventSourceResponse(event_generator())
 
 
+def _extract_session_id(request, message: Dict) -> Optional[str]:
+    # 兼容不同 MCP 客户端: query/header/body 的 session id 传递方式
+    for key in ("session_id", "sessionId", "sid"):
+        value = request.query_params.get(key)
+        if value:
+            return value.strip()
+
+    for key in ("mcp-session-id", "x-mcp-session-id", "x-session-id"):
+        value = request.headers.get(key)
+        if value:
+            return value.strip()
+
+    for key in ("session_id", "sessionId", "sid"):
+        value = message.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    params = message.get("params")
+    if isinstance(params, dict):
+        for key in ("session_id", "sessionId", "sid"):
+            value = params.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        meta = params.get("_meta")
+        if isinstance(meta, dict):
+            for key in ("session_id", "sessionId", "sid"):
+                value = meta.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+    return None
+
+
 async def messages_endpoint(request):
     """处理 POST 消息 - 支持 SSE session"""
     try:
@@ -271,8 +307,8 @@ async def messages_endpoint(request):
         message = json.loads(body.decode())
         logger.info(f"收到消息: {message}")
         
-        # 检查是否有 session_id
-        session_id = request.query_params.get("session_id")
+        # 兼容多种 session id 传递方式
+        session_id = _extract_session_id(request, message)
         
         # 处理消息
         response = handle_mcp_message(message, riddles_data)
@@ -280,7 +316,7 @@ async def messages_endpoint(request):
         # 如果有 session_id，通过 SSE 发送响应
         if session_id:
             await session_manager.send_to_session(session_id, response)
-            return JSONResponse({"status": "sent"})
+            return JSONResponse({"status": "sent", "session_id": session_id})
         
         return JSONResponse(response)
     except Exception as e:
@@ -297,7 +333,9 @@ async def health_check(request):
 
 
 starlette_app = Starlette(routes=[
-    Route("/sse", sse_endpoint),
+    Route("/sse", sse_endpoint, methods=["GET", "POST"]),
+    Route("/mcp", sse_endpoint, methods=["GET", "POST"]),
+    Route("/sse/messages", messages_endpoint, methods=["POST"]),
     Route("/messages", messages_endpoint, methods=["POST"]),
     Route("/health", health_check),
 ])

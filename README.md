@@ -41,6 +41,12 @@ python server_sse.py
 - MCP 消息: `POST /messages`
 - 健康检查: `GET /health`
 
+兼容端点（用于部分第三方 Agent）：
+- `GET /mcp`（SSE 别名）
+- `POST /sse`（部分平台会对同一路径发消息）
+- `POST /sse/messages`（SSE 消息别名）
+- `POST /mcp`（单路径兼容）
+
 ### 健康检查示例
 
 ```bash
@@ -84,6 +90,8 @@ curl http://127.0.0.1:48080/health
 }
 ```
 
+如果平台只允许填一个端点路径，优先使用 `/mcp`。
+
 ### HTTP 方式
 
 ```json
@@ -96,4 +104,3 @@ curl http://127.0.0.1:48080/health
   }
 }
 ```
-
