@@ -254,7 +254,8 @@ async def sse_endpoint(request):
     
     async def event_generator():
         host = request.headers.get("host", "")
-        endpoint_url = f"{request.url.scheme}://{host}/messages?session_id={session_id}" if host else f"/messages?session_id={session_id}"
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        endpoint_url = f"{proto}://{host}/messages?session_id={session_id}" if host else f"/messages?session_id={session_id}"
 
         # MCP SSE compatibility: many clients expect the endpoint event first.
         yield {"event": "endpoint", "data": endpoint_url}
